@@ -6,7 +6,6 @@ import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { API, User } from "stoat.js";
 
 import { useClient } from "@revolt/client";
-import { CONFIGURATION } from "@revolt/common";
 import {
   CategoryButton,
   CircularProgress,
@@ -18,6 +17,7 @@ import {
 
 import MdBadge from "@material-design-icons/svg/filled/badge.svg?component-solid";
 
+import { useInstance } from "@revolt/instance";
 import { useSettingsNavigation } from "../../Settings";
 
 interface Props {
@@ -28,6 +28,7 @@ export function UserProfileEditor(props: Props) {
   const { t } = useLingui();
   const client = useClient();
   const queryClient = useQueryClient();
+  const instance = useInstance();
 
   const profile = useQuery(() => ({
     queryKey: ["profile", props.user.id],
@@ -104,7 +105,7 @@ export function UserProfileEditor(props: Props) {
         changes.avatar = await client().uploadFile(
           "avatars",
           editGroup.controls.avatar.value[0],
-          CONFIGURATION.DEFAULT_MEDIA_URL,
+          instance.mediaUrl,
         );
       }
     }
@@ -136,10 +137,10 @@ export function UserProfileEditor(props: Props) {
         changes.profile.background = await client().uploadFile(
           "backgrounds",
           editGroup.controls.banner.value[0],
-          CONFIGURATION.DEFAULT_MEDIA_URL,
+          instance.mediaUrl,
         );
 
-        newBannerUrl = `${CONFIGURATION.DEFAULT_MEDIA_URL}/backgrounds/${changes.profile.background}`;
+        newBannerUrl = `${instance.mediaUrl}/backgrounds/${changes.profile.background}`;
       } else {
         newBannerUrl = editGroup.controls.banner.value;
       }
