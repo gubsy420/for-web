@@ -221,13 +221,6 @@ class Voice {
             track?.audioTrack?.setProcessor(
               (this.voiceProcessor = new VoiceProcessor(this.#settings)),
             );
-            // if (this.#settings.noiseSupression === "enhanced") {
-            //   track?.audioTrack?.setProcessor(
-            //     new DenoiseTrackProcessor({
-            //       workletCDNURL: CONFIGURATION.RNNOISE_WORKLET_CDN_URL,
-            //     }),
-            //   );
-            // }
           });
       for (const p of room.remoteParticipants.values()) {
         const screenShareTrack = p.getTrackPublication(
