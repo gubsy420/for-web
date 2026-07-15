@@ -176,12 +176,14 @@ export class VoiceProcessor implements TrackProcessor<
     this.highpassNode?.disconnect();
     this.preNoiseSuppressionNode?.disconnect();
     this.postNoiseSuppressionNode?.disconnect();
+    this.compressorNode?.disconnect();
     this.gainNode?.disconnect();
     this.destinationNode?.disconnect();
     this.sourceNode = undefined;
     this.highpassNode = undefined;
     this.preNoiseSuppressionNode = undefined;
     this.postNoiseSuppressionNode = undefined;
+    this.compressorNode = undefined;
     this.gainNode = undefined;
     this.destinationNode = undefined;
     this.noiseSuppressor = undefined;
