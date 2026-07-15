@@ -2,6 +2,7 @@ import {
   Accessor,
   batch,
   createContext,
+  createEffect,
   createSignal,
   JSX,
   Setter,
@@ -14,16 +15,15 @@ import {
 } from "solid-livekit-components";
 
 import {
+  LocalTrackPublication,
   Room,
   ScreenSharePresets,
   Track,
   VideoResolution,
 } from "livekit-client";
-import { DenoiseTrackProcessor } from "livekit-rnnoise-processor";
 import { Channel } from "stoat.js";
 
 import { SoundController, useClient, useSound } from "@revolt/client";
-import { CONFIGURATION } from "@revolt/common";
 import { ModalController, useModals } from "@revolt/modal";
 import { useState } from "@revolt/state";
 import {
@@ -34,6 +34,7 @@ import { VoiceCallCardContext } from "@revolt/ui/components/features/voice/callC
 
 import { InRoom } from "./components/InRoom";
 import { RoomAudioManager } from "./components/RoomAudioManager";
+import { VoiceProcessor } from "./VoiceProcessor";
 
 type State =
   | "READY"
@@ -86,6 +87,7 @@ class Voice {
   private openModal;
   private getClient;
   private screenShareTracks: Set<string>;
+  private voiceProcessor?: VoiceProcessor;
 
   constructor(
     voiceSettings: VoiceSettings,
@@ -137,6 +139,42 @@ class Voice {
     this.getClient = useClient();
 
     this.screenShareTracks = new Set();
+
+    // Setup settings listeners
+    this.settingsListeners();
+  }
+
+  // Dynamically set echo cancellation and gain control when the settings are changed
+  // These functions are needed to maintain reactivity. Don't ask me why but if you make them not functions it breaks.
+  private settingsListeners() {
+    const getSettings = () => this.#settings;
+
+    const setEchoCancellation = (echoCancellation: boolean) => {
+      const track = this.getMicrophoneTrack()?.audioTrack;
+      if (track) {
+        track.constraints.echoCancellation = echoCancellation;
+      }
+    };
+
+    const setAutoGainControl = (autoGainControl: boolean) => {
+      const track = this.getMicrophoneTrack()?.audioTrack;
+      if (track) {
+        track.constraints.autoGainControl = autoGainControl;
+      }
+    };
+
+    const restartTrack = () => {
+      const track = this.getMicrophoneTrack()?.audioTrack;
+      if (track) {
+        track.restartTrack();
+      }
+    };
+
+    createEffect(() => {
+      setEchoCancellation(getSettings().echoCancellation ?? true);
+      setAutoGainControl(getSettings().autoGainControl ?? true);
+      restartTrack();
+    });
   }
 
   async connect(channel: Channel, auth?: { url: string; token: string }) {
@@ -180,13 +218,16 @@ class Voice {
           .setMicrophoneEnabled(this.#settings.micOn)
           .then((track) => {
             this.#settings.micOn = track != null;
-            if (this.#settings.noiseSupression === "enhanced") {
-              track?.audioTrack?.setProcessor(
-                new DenoiseTrackProcessor({
-                  workletCDNURL: CONFIGURATION.RNNOISE_WORKLET_CDN_URL,
-                }),
-              );
-            }
+            track?.audioTrack?.setProcessor(
+              (this.voiceProcessor = new VoiceProcessor(this.#settings)),
+            );
+            // if (this.#settings.noiseSupression === "enhanced") {
+            //   track?.audioTrack?.setProcessor(
+            //     new DenoiseTrackProcessor({
+            //       workletCDNURL: CONFIGURATION.RNNOISE_WORKLET_CDN_URL,
+            //     }),
+            //   );
+            // }
           });
       for (const p of room.remoteParticipants.values()) {
         const screenShareTrack = p.getTrackPublication(
@@ -601,6 +642,13 @@ class Voice {
         channel.type === "TextChannel" ||
         channel.voiceParticipants.size)
     );
+  }
+
+  getMicrophoneTrack(): LocalTrackPublication | undefined {
+    const track = this.room()?.localParticipant.getTrackPublication(
+      Track.Source.Microphone,
+    );
+    return track;
   }
 
   get listenPermission() {
