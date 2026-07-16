@@ -218,9 +218,6 @@ class Voice {
           .setMicrophoneEnabled(this.#settings.micOn)
           .then((track) => {
             this.#settings.micOn = track != null;
-            track?.audioTrack?.setProcessor(
-              (this.voiceProcessor = new VoiceProcessor(this.#settings)),
-            );
           });
       for (const p of room.remoteParticipants.values()) {
         const screenShareTrack = p.getTrackPublication(
@@ -234,6 +231,16 @@ class Voice {
     });
 
     room.addListener("disconnected", () => this.#setState("DISCONNECTED"));
+
+    room.addListener("localTrackPublished", (pub) => {
+      if (pub.audioTrack && pub.audioTrack.source === Track.Source.Microphone) {
+        if (!pub.audioTrack.getProcessor()) {
+          pub.audioTrack?.setProcessor(
+            (this.voiceProcessor = new VoiceProcessor(this.#settings)),
+          );
+        }
+      }
+    });
 
     room.addListener("participantConnected", () => {
       this.sound.playSound("userJoinVoice");

@@ -46,7 +46,6 @@ export class VoiceProcessor implements TrackProcessor<
               (newNoiseSuppresion === "enhanced" ||
                 oldNoiseSuppression === "enhanced")
             ) {
-              console.log("REBUJILDNG");
               this.rebuild();
             }
           },
@@ -128,7 +127,6 @@ export class VoiceProcessor implements TrackProcessor<
           new MediaStream([this.noiseSuppressor.processedTrack]),
         );
         this.compressorNode = context.createDynamicsCompressor();
-        // These values are shamelessly taken from Fluxer code base.
         this.compressorNode.threshold.value = -3;
         this.compressorNode.knee.value = 0;
         this.compressorNode.ratio.value = 20;
@@ -152,9 +150,6 @@ export class VoiceProcessor implements TrackProcessor<
       this.audioContext = context;
     }
     if (!context) {
-      console.log(
-        "Attempted to build voice processor without a context. Ignoring.",
-      );
       return;
     }
     this.originalTrack = opts.track;
