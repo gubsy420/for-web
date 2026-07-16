@@ -121,6 +121,7 @@ export class VoiceProcessor implements TrackProcessor<
       }
       if (noiseSuppressionFailed || !this.noiseSuppressor.processedTrack) {
         this.postNoiseSuppressionNode = this.sourceNode!;
+        this.postNoiseSuppressionNode.connect(this.gainNode!);
       } else {
         this.sourceNode!.connect(this.highpassNode!);
         this.postNoiseSuppressionNode = context.createMediaStreamSource(
