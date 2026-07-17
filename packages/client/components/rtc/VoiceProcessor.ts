@@ -91,6 +91,7 @@ export class VoiceProcessor implements TrackProcessor<
       this.postNoiseSuppressionNode?.disconnect();
       this.preNoiseSuppressionNode?.disconnect();
       this.highpassNode?.disconnect();
+      this.sourceNode?.disconnect();
     }
 
     if (this.settings.noiseSupression === "enhanced") {
