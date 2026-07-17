@@ -94,6 +94,14 @@ export class VoiceProcessor implements TrackProcessor<
       this.sourceNode?.disconnect();
     }
 
+    const fallback = () => {
+      this.postNoiseSuppressionNode = this.sourceNode!;
+      this.compressorNode = undefined;
+      this.preNoiseSuppressionNode = undefined;
+      this.highpassNode = undefined;
+      this.postNoiseSuppressionNode.connect(this.gainNode!);
+    };
+
     if (this.settings.noiseSupression === "enhanced") {
       this.highpassNode = context.createBiquadFilter();
       this.highpassNode.type = "highpass";
@@ -120,8 +128,7 @@ export class VoiceProcessor implements TrackProcessor<
         noiseSuppressionFailed = true;
       }
       if (noiseSuppressionFailed || !this.noiseSuppressor.processedTrack) {
-        this.postNoiseSuppressionNode = this.sourceNode!;
-        this.postNoiseSuppressionNode.connect(this.gainNode!);
+        fallback();
       } else {
         this.sourceNode!.connect(this.highpassNode!);
         this.postNoiseSuppressionNode = context.createMediaStreamSource(
@@ -137,8 +144,7 @@ export class VoiceProcessor implements TrackProcessor<
         this.compressorNode.connect(this.gainNode!);
       }
     } else {
-      this.postNoiseSuppressionNode = this.sourceNode!;
-      this.postNoiseSuppressionNode.connect(this.gainNode!);
+      fallback();
     }
   }
 
