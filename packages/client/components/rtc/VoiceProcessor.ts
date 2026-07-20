@@ -1,5 +1,5 @@
 import { AudioProcessorOptions, Track, TrackProcessor } from "livekit-client";
-import { DenoiseTrackProcessor } from "livekit-rnnoise-processor";
+import { RNNoiseNode } from "livekit-rnnoise-processor";
 import { createEffect, createRoot, on } from "solid-js";
 
 import { CONFIGURATION } from "@revolt/common";
@@ -11,13 +11,9 @@ export class VoiceProcessor implements TrackProcessor<
 > {
   readonly name = "stoat-voice-processor";
   processedTrack?: MediaStreamTrack;
-  private originalTrack?: MediaStreamTrack;
   private audioContext?: AudioContext;
   private settings: Voice;
-  private noiseSuppressor?: TrackProcessor<
-    Track.Kind.Audio,
-    AudioProcessorOptions
-  >;
+  private noiseSuppressionNode?: RNNoiseNode;
   private sourceNode?: MediaStreamAudioSourceNode;
   private highpassNode?: BiquadFilterNode;
   private preNoiseSuppressionNode?: MediaStreamAudioDestinationNode;
@@ -71,6 +67,10 @@ export class VoiceProcessor implements TrackProcessor<
   }
 
   async init(opts: AudioProcessorOptions): Promise<void> {
+    await RNNoiseNode.loadModule(
+      opts.audioContext,
+      CONFIGURATION.RNNOISE_WORKLET_CDN_URL,
+    );
     return this.build(opts);
   }
 
@@ -85,8 +85,8 @@ export class VoiceProcessor implements TrackProcessor<
   }
 
   private async updateNoiseSuppression(context: AudioContext) {
-    if (this.noiseSuppressor) {
-      this.noiseSuppressor.destroy();
+    if (this.noiseSuppressionNode) {
+      this.noiseSuppressionNode.disconnect();
       this.compressorNode?.disconnect();
       this.postNoiseSuppressionNode?.disconnect();
       this.preNoiseSuppressionNode?.disconnect();
@@ -108,41 +108,19 @@ export class VoiceProcessor implements TrackProcessor<
       this.highpassNode.frequency.value = 50;
       this.highpassNode.Q.value = Math.SQRT1_2;
 
-      this.preNoiseSuppressionNode = context.createMediaStreamDestination();
-      this.highpassNode.connect(this.preNoiseSuppressionNode);
-
-      const track = this.preNoiseSuppressionNode.stream.getAudioTracks()[0];
-
-      this.noiseSuppressor = new DenoiseTrackProcessor({
-        workletCDNURL: CONFIGURATION.RNNOISE_WORKLET_CDN_URL,
+      this.noiseSuppressionNode = new RNNoiseNode(this.audioContext!, {
+        debugLogs: true,
       });
-      let noiseSuppressionFailed = false;
-      try {
-        await this.noiseSuppressor.init({
-          kind: Track.Kind.Audio,
-          audioContext: context,
-          track: track,
-        });
-      } catch (error) {
-        console.error("Failed to enable noise suppression: ", error);
-        noiseSuppressionFailed = true;
-      }
-      if (noiseSuppressionFailed || !this.noiseSuppressor.processedTrack) {
-        fallback();
-      } else {
-        this.sourceNode!.connect(this.highpassNode!);
-        this.postNoiseSuppressionNode = context.createMediaStreamSource(
-          new MediaStream([this.noiseSuppressor.processedTrack]),
-        );
-        this.compressorNode = context.createDynamicsCompressor();
-        this.compressorNode.threshold.value = -3;
-        this.compressorNode.knee.value = 0;
-        this.compressorNode.ratio.value = 20;
-        this.compressorNode.attack.value = 0.003;
-        this.compressorNode.release.value = 0.05;
-        this.postNoiseSuppressionNode.connect(this.compressorNode);
-        this.compressorNode.connect(this.gainNode!);
-      }
+      this.highpassNode.connect(this.noiseSuppressionNode);
+      this.compressorNode = context.createDynamicsCompressor();
+      this.compressorNode.threshold.value = -3;
+      this.compressorNode.knee.value = 0;
+      this.compressorNode.ratio.value = 20;
+      this.compressorNode.attack.value = 0.003;
+      this.compressorNode.release.value = 0.05;
+      this.noiseSuppressionNode.connect(this.compressorNode);
+      this.compressorNode.connect(this.gainNode!);
+      this.sourceNode!.connect(this.highpassNode!);
     } else {
       fallback();
     }
@@ -159,8 +137,6 @@ export class VoiceProcessor implements TrackProcessor<
     if (!context) {
       return;
     }
-    this.originalTrack = opts.track;
-
     this.sourceNode = context.createMediaStreamSource(
       new MediaStream([opts.track]),
     );
@@ -174,10 +150,10 @@ export class VoiceProcessor implements TrackProcessor<
   }
 
   private async teardown() {
-    await this.noiseSuppressor?.destroy();
     this.sourceNode?.disconnect();
     this.highpassNode?.disconnect();
     this.preNoiseSuppressionNode?.disconnect();
+    this.noiseSuppressionNode?.disconnect();
     this.postNoiseSuppressionNode?.disconnect();
     this.compressorNode?.disconnect();
     this.gainNode?.disconnect();
@@ -185,10 +161,10 @@ export class VoiceProcessor implements TrackProcessor<
     this.sourceNode = undefined;
     this.highpassNode = undefined;
     this.preNoiseSuppressionNode = undefined;
+    this.noiseSuppressionNode = undefined;
     this.postNoiseSuppressionNode = undefined;
     this.compressorNode = undefined;
     this.gainNode = undefined;
     this.destinationNode = undefined;
-    this.noiseSuppressor = undefined;
   }
 }
