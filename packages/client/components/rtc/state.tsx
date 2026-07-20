@@ -27,6 +27,7 @@ import { SoundController, useClient, useSound } from "@revolt/client";
 import { ModalController, useModals } from "@revolt/modal";
 import { useState } from "@revolt/state";
 import {
+  NoiseSuppresionState,
   ScreenShareQualityName,
   Voice as VoiceSettings,
 } from "@revolt/state/stores/Voice";
@@ -163,6 +164,21 @@ class Voice {
       }
     };
 
+    const setNoiseSuppression = (noiseSuppression: NoiseSuppresionState) => {
+      const track = this.getMicrophoneTrack()?.audioTrack;
+      if (track) {
+        if (noiseSuppression === "browser") {
+          track.constraints.noiseSuppression = true;
+          //@ts-expect-error voiceIsolation is not yet standard, but it supported by livekit and most chromium based browsers, including electron.
+          track.constraints.voiceIsolation = true;
+        } else {
+          track.constraints.noiseSuppression = false;
+          //@ts-expect-error voiceIsolation is not yet standard, but it supported by livekit and most chromium based browsers, including electron.
+          track.constraints.voiceIsolation = false;
+        }
+      }
+    };
+
     const restartTrack = () => {
       const track = this.getMicrophoneTrack()?.audioTrack;
       if (track) {
@@ -173,6 +189,7 @@ class Voice {
     createEffect(() => {
       setEchoCancellation(getSettings().echoCancellation ?? true);
       setAutoGainControl(getSettings().autoGainControl ?? true);
+      setNoiseSuppression(getSettings().noiseSupression ?? "browser");
       restartTrack();
     });
   }
@@ -186,6 +203,7 @@ class Voice {
         echoCancellation: this.#settings.echoCancellation,
         noiseSuppression: this.#settings.noiseSupression === "browser",
         autoGainControl: this.#settings.autoGainControl,
+        voiceIsolation: this.#settings.noiseSupression === "browser",
       },
       audioOutput: {
         deviceId: this.#settings.preferredAudioOutputDevice,
