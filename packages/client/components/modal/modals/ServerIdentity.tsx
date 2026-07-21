@@ -4,9 +4,9 @@ import { Trans, useLingui } from "@lingui-solid/solid/macro";
 import { API } from "stoat.js";
 
 import { useClient } from "@revolt/client";
+import { useInstance } from "@revolt/instance";
 import { Column, Dialog, DialogProps, Form2 } from "@revolt/ui";
 
-import { useInstance } from "@revolt/instance";
 import { useModals } from "..";
 import { Modals } from "../types";
 
