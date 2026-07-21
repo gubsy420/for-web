@@ -18,5 +18,3 @@ nodeLinker: isolated
 overrides:
   "prettier": "^3.8.1"
 strictPeerDependencies: false
-minimumReleaseAgeExclude:
-  - livekit-rnnoise-processor
