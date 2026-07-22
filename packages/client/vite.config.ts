@@ -36,6 +36,7 @@ export default defineConfig({
       },
       devOptions: {
         enabled: true,
+        type: "module",
       },
       manifest: {
         name: "Stoat",
