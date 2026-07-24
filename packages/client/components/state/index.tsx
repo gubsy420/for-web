@@ -57,15 +57,6 @@ export class State {
   diagDrawer;
   setDiagDrawer;
 
-  readonly isPWA =
-    //Safari
-    (window.navigator as never as { standalone: boolean }).standalone ||
-    //Other
-    window.matchMedia("(display-mode: standalone)").matches;
-
-  pwaPrompt;
-  pwaInstalled;
-
   // define all stores
   auth = new Auth(this);
   draft = new Draft(this);
@@ -127,16 +118,6 @@ export class State {
     const [dd, setDd] = createSignal<SlideDrawer>();
     this.diagDrawer = dd;
     this.setDiagDrawer = setDd;
-
-    const [pp, setPp] = createSignal<BeforeInstallPromptEvent>();
-    if (typeof window._PwaP === "object") setPp(window._PwaP);
-    else window._PwaP = setPp;
-    this.pwaPrompt = pp;
-
-    const [pi, setPi] = createSignal(false);
-    if (typeof window._PwaI === "boolean") setPi(window._PwaI);
-    else window._PwaI = setPi;
-    this.pwaInstalled = pi;
   }
 
   /**

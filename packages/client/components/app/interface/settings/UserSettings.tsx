@@ -9,7 +9,6 @@ import { CONFIGURATION, useDevice } from "@revolt/common";
 import { useUser } from "@revolt/markdown/users";
 import { useModals } from "@revolt/modal";
 import { fetchLatestChangelog } from "@revolt/modal/modals/Changelog";
-import { useState } from "@revolt/state";
 import { ColouredText, Column, Text, iconSize } from "@revolt/ui";
 import { Symbol } from "@revolt/ui/components/utils/Symbol";
 
@@ -120,8 +119,7 @@ const Config: SettingsConfiguration<{ server: Server }> = {
     const { pop, openModal } = useModals();
     const { logout } = useClientLifecycle();
     const client = useClient();
-    const state = useState();
-    const { isMobile } = useDevice();
+    const device = useDevice();
 
     const legalLinks = () =>
       client().configured()
@@ -241,7 +239,7 @@ const Config: SettingsConfiguration<{ server: Server }> = {
               id: "install",
               icon: <MdInstallMobile {...iconSize(20)} />,
               title: <Trans>Install</Trans>,
-              hidden: !isMobile || state.isPWA || state.pwaInstalled(),
+              hidden: !device.isMobile || device.isPWA || device.pwaInstalled(),
             },
             {
               id: "bots",

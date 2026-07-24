@@ -2,7 +2,7 @@ import { Trans } from "@lingui-solid/solid/macro";
 
 import MdIosShare from "@material-design-icons/svg/outlined/ios_share.svg?component-solid";
 import MdRefresh from "@material-design-icons/svg/outlined/refresh.svg?component-solid";
-import { useState } from "@revolt/state";
+import { useDevice } from "@revolt/common";
 import { Button, iconSize } from "@revolt/ui";
 import { createEffect, createSignal, Match, Show, Switch } from "solid-js";
 import { styled } from "styled-system/jsx";
@@ -38,7 +38,7 @@ const Steps = styled("ol", {
  * Installation Instructions Page
  */
 export default function InstallInstructions() {
-  const { pwaPrompt, pwaInstalled } = useState();
+  const { pwaPrompt, pwaInstalled } = useDevice();
 
   const [result, setResult] = createSignal<"accepted" | "dismissed">();
   const isFirefox = navigator.userAgent.toLowerCase().includes("firefox");
