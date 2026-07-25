@@ -14,17 +14,36 @@ const NoiseSuppresionStates: NoiseSuppresionState[] = [
 ];
 
 /**
- * Possible screen share qualities. Low is 720p@30fps, high 1080p@30fps and text is source@5fps.
+ * Possible screen share resolutions. "source" captures the display's native
+ * resolution, clamped to whatever the instance permits.
  */
-export type ScreenShareQualityName = "low" | "high" | "text";
+export type ScreenShareResolutionName = "720" | "1080" | "1440" | "source";
 
 /**
- * Array of available screen share quality names.
+ * Array of available screen share resolution names.
  */
-export const ScreenShareQualityNames: ScreenShareQualityName[] = [
-  "low",
-  "high",
-  "text",
+export const ScreenShareResolutionNames: ScreenShareResolutionName[] = [
+  "720",
+  "1080",
+  "1440",
+  "source",
+];
+
+/**
+ * Possible screen share framerates, in frames per second. Kept as strings so
+ * they can drive the form controls and settings selects directly, which are
+ * both keyed by string.
+ */
+export type ScreenShareFramerateName = "5" | "15" | "30" | "60";
+
+/**
+ * Array of available screen share framerates.
+ */
+export const ScreenShareFramerateNames: ScreenShareFramerateName[] = [
+  "5",
+  "15",
+  "30",
+  "60",
 ];
 
 export interface TypeVoice {
@@ -36,7 +55,8 @@ export interface TypeVoice {
   noiseSupression: NoiseSuppresionState;
   autoGainControl: boolean;
 
-  screenShareQuality: ScreenShareQualityName;
+  screenShareResolution: ScreenShareResolutionName;
+  screenShareFramerate: ScreenShareFramerateName;
   screenShareQualityAsk: boolean;
   screenShareAudio: boolean;
 
@@ -79,7 +99,8 @@ export class Voice extends AbstractStore<"voice", TypeVoice> {
       echoCancellation: true,
       noiseSupression: "browser",
       autoGainControl: true,
-      screenShareQuality: "low",
+      screenShareResolution: "720",
+      screenShareFramerate: "30",
       screenShareQualityAsk: true,
       screenShareAudio: true,
       inputVolume: 1.0,
@@ -131,11 +152,32 @@ export class Voice extends AbstractStore<"voice", TypeVoice> {
       data.autoGainControl = input.autoGainControl;
     }
 
+    // migrate the legacy single-preset setting to the two-axis equivalent
+    const legacyQuality = (input as { screenShareQuality?: unknown })
+      .screenShareQuality;
+    if (legacyQuality === "low") {
+      data.screenShareResolution = "720";
+      data.screenShareFramerate = "30";
+    } else if (legacyQuality === "high") {
+      data.screenShareResolution = "1080";
+      data.screenShareFramerate = "30";
+    } else if (legacyQuality === "text") {
+      data.screenShareResolution = "source";
+      data.screenShareFramerate = "5";
+    }
+
     if (
-      input.screenShareQuality &&
-      ScreenShareQualityNames.includes(input.screenShareQuality)
+      input.screenShareResolution &&
+      ScreenShareResolutionNames.includes(input.screenShareResolution)
     ) {
-      data.screenShareQuality = input.screenShareQuality;
+      data.screenShareResolution = input.screenShareResolution;
+    }
+
+    if (
+      input.screenShareFramerate &&
+      ScreenShareFramerateNames.includes(input.screenShareFramerate)
+    ) {
+      data.screenShareFramerate = input.screenShareFramerate;
     }
 
     if (typeof input.screenShareQualityAsk === "boolean") {
@@ -314,10 +356,17 @@ export class Voice extends AbstractStore<"voice", TypeVoice> {
   }
 
   /**
-   * Set screen share quality
+   * Set screen share resolution
    */
-  set screenShareQuality(value: ScreenShareQualityName) {
-    this.set("screenShareQuality", value);
+  set screenShareResolution(value: ScreenShareResolutionName) {
+    this.set("screenShareResolution", value);
+  }
+
+  /**
+   * Set screen share framerate
+   */
+  set screenShareFramerate(value: ScreenShareFramerateName) {
+    this.set("screenShareFramerate", value);
   }
 
   /**
@@ -405,10 +454,17 @@ export class Voice extends AbstractStore<"voice", TypeVoice> {
   }
 
   /**
-   * Get screen share quality
+   * Get screen share resolution
    */
-  get screenShareQuality(): ScreenShareQualityName | undefined {
-    return this.get().screenShareQuality;
+  get screenShareResolution(): ScreenShareResolutionName | undefined {
+    return this.get().screenShareResolution;
+  }
+
+  /**
+   * Get screen share framerate
+   */
+  get screenShareFramerate(): ScreenShareFramerateName | undefined {
+    return this.get().screenShareFramerate;
   }
 
   /**

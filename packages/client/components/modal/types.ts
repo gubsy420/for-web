@@ -23,7 +23,10 @@ import { ProtocolV1 } from "stoat.js/lib/events/v1";
 
 import type { SettingsConfigurations } from "@revolt/app";
 import { CategoryData } from "@revolt/app/menus/CategoryContextMenu";
-import { ScreenShareQualityName } from "@revolt/state/stores/Voice";
+import {
+  ScreenShareFramerateName,
+  ScreenShareResolutionName,
+} from "@revolt/state/stores/Voice";
 
 import type { ChangelogResponse } from "./modals/Changelog";
 
@@ -324,19 +327,26 @@ export type Modals =
   | {
       type: "screen_share_settings";
       trackReference: TrackReference;
-      qualities: { name: string; fullName: string }[];
+      resolutions: { name: ScreenShareResolutionName; fullName: string }[];
+      framerates: { name: ScreenShareFramerateName; fullName: string }[];
       audio: boolean;
-      callback: (qualityName: ScreenShareQualityName, audio: boolean) => void;
+      callback: (
+        resolutionName: ScreenShareResolutionName,
+        framerateName: ScreenShareFramerateName,
+        audio: boolean,
+      ) => void;
       onCancel: () => void;
     }
   | {
       type: "screen_share_picker";
       callback: (
         idx: number,
-        qualityName: ScreenShareQualityName,
+        resolutionName: ScreenShareResolutionName,
+        framerateName: ScreenShareFramerateName,
         audio: boolean,
       ) => void;
-      qualities: { name: string; fullName: string }[];
+      resolutions: { name: ScreenShareResolutionName; fullName: string }[];
+      framerates: { name: ScreenShareFramerateName; fullName: string }[];
       sources: {
         idx: number;
         name: string;

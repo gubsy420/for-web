@@ -2,7 +2,10 @@ import { Trans, useLingui } from "@lingui-solid/solid/macro";
 import { createFormControl, createFormGroup } from "solid-forms";
 
 import { useState } from "@revolt/state";
-import { ScreenShareQualityName } from "@revolt/state/stores/Voice";
+import {
+  ScreenShareFramerateName,
+  ScreenShareResolutionName,
+} from "@revolt/state/stores/Voice";
 import { Column, Dialog, DialogProps, Form2 } from "@revolt/ui";
 import { VideoTrack } from "solid-livekit-components";
 
@@ -16,8 +19,12 @@ export function ScreenShareSettingsModal(
   const { t } = useLingui();
 
   const group = createFormGroup({
-    qualityName: createFormControl<ScreenShareQualityName>(
-      voice.screenShareQuality || "low",
+    resolutionName: createFormControl<ScreenShareResolutionName>(
+      voice.screenShareResolution || "720",
+      { required: true },
+    ),
+    framerateName: createFormControl<ScreenShareFramerateName>(
+      voice.screenShareFramerate || "30",
       { required: true },
     ),
     audio: createFormControl(props.audio && voice.screenShareAudio, {
@@ -28,13 +35,15 @@ export function ScreenShareSettingsModal(
 
   async function onSubmit() {
     if (group.controls.dontAsk.value) {
-      voice.screenShareQuality = group.controls.qualityName.value;
+      voice.screenShareResolution = group.controls.resolutionName.value;
+      voice.screenShareFramerate = group.controls.framerateName.value;
       voice.screenShareQualityAsk = false;
       voice.screenShareAudio = group.controls.audio.value;
     }
 
     props.callback(
-      group.controls.qualityName.value,
+      group.controls.resolutionName.value,
+      group.controls.framerateName.value,
       group.controls.audio.value && props.audio,
     );
     props.onClose();
@@ -74,11 +83,20 @@ export function ScreenShareSettingsModal(
       <form onSubmit={submit}>
         <Column>
           <Form2.ButtonGroup
-            control={group.controls.qualityName}
-            buttonDefinitions={props.qualities.map((quality) => {
+            control={group.controls.resolutionName}
+            buttonDefinitions={props.resolutions.map((resolution) => {
               return {
-                children: quality.fullName,
-                value: quality.name,
+                children: resolution.fullName,
+                value: resolution.name,
+              };
+            })}
+          />
+          <Form2.ButtonGroup
+            control={group.controls.framerateName}
+            buttonDefinitions={props.framerates.map((framerate) => {
+              return {
+                children: framerate.fullName,
+                value: framerate.name,
               };
             })}
           />

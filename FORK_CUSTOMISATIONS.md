@@ -17,19 +17,56 @@ the share modal, raising the ceiling from the stock 1080p30 to 1440p60. Upstream
 hardcodes three fixed presets (720p30 / 1080p30 / source@5fps) with no framerate
 choice.
 
-**Touched files (see the implementation plan for specifics):**
-- `packages/client/components/state/stores/Voice.ts` — replaces the single
-  `screenShareQuality` setting with two persisted axes (`screenShareResolution`,
-  `screenShareFramerate`) plus validation.
-- `packages/client/components/rtc/state.tsx` — resolution/framerate option sources
-  gated by the server `video_resolution` limit; publishes with an explicit
-  `screenShareEncoding` bitrate; builds a fresh `VideoResolution` (does not mutate
-  the shared `ScreenSharePresets`).
+**Model:** the single `ScreenShareQualityName` (`"low" | "high" | "text"`) is
+replaced by two orthogonal axes:
+
+| Axis | Type | Values | Default |
+|---|---|---|---|
+| Resolution | `ScreenShareResolutionName` | `"720"`, `"1080"`, `"1440"`, `"source"` | `"720"` |
+| Framerate | `ScreenShareFramerateName` | `"5"`, `"15"`, `"30"`, `"60"` | `"30"` |
+
+Both are **string** unions because `Form2.ButtonGroup` takes an
+`IFormControl<string>` and `CategoryButton.Select` is keyed by string; the numeric
+framerate is derived with `Number()` at the point of use. Keeping `"5"` preserves
+upstream's source@5fps text-reading mode as an ordinary framerate choice.
+
+**Touched files:**
+- `packages/client/components/state/stores/Voice.ts` — the two persisted axes plus
+  validation, and a migration mapping the legacy `screenShareQuality` value
+  (`low`→720/30, `high`→1080/30, `text`→source/5) so existing users keep their
+  setting instead of silently resetting.
+- `packages/client/components/rtc/state.tsx` — `getEnabledScreenShareResolutions()`
+  and `getEnabledScreenShareFramerates()` replace
+  `getEnabledScreenShareQualities()`. Resolutions are gated by the instance's
+  `features.limits.default.video_resolution` (0 on an axis = unconstrained), since
+  voice-ingress disconnects publishers exceeding it; framerates are never gated,
+  as the server does not police fps. Publishes with an explicit
+  `screenShareEncoding` (`maxBitrate`/`maxFramerate`) because livekit ships no
+  preset above 1080p30 and an unspecified bitrate leaves high resolutions looking
+  soft. The post-publish callback also updates the `RTCRtpSender` encodings, as
+  `applyConstraints` only retunes capture, not the publish bitrate.
 - `packages/client/components/modal/modals/ScreenSharePicker.tsx`,
   `.../ScreenShareSettings.tsx` — two `Form2.ButtonGroup`s (resolution, framerate).
 - `packages/client/components/app/interface/settings/user/voice/ScreenShareOptions.tsx`
-  — two selects.
-- `packages/client/components/modal/types.ts` — modal callback/prop signatures.
+  — two `CategoryButton.Select`s.
+- `packages/client/components/modal/types.ts` — the modal `callback` signatures take
+  `(…, resolutionName, framerateName, audio)` and the single `qualities` prop is
+  split into `resolutions` and `framerates`.
+
+**Two upstream bugs fixed in passing** — if upstream fixes them itself, take their
+version:
+1. `ScreenSharePresets.original.resolution` was **mutated** in place, leaking the
+   frameRate/aspectRatio/width/height changes into every later screen share in the
+   session. Resolutions are now built fresh each time.
+2. The `applyConstraints` height guard tested `resolution.width === 0` instead of
+   `height`, so an unconstrained width with a constrained height set a bogus
+   height limit.
+
+**Server dependency:** 1440p is only *offered* when the instance's
+`video_resolution` limit permits it. The self-hosted `Revolt.toml` must set
+`video_resolution = [2560, 1440]` under `[features.limits.default]` (and
+`new_user`) or the option correctly stays hidden. This is deliberate — it fails
+closed rather than getting streamers disconnected by voice-ingress.
 
 **Conflict guidance:** if upstream reworks the screen-share quality code, preserve
 the *two-axis selection + explicit bitrate + 1440p60 ceiling*; re-express it on top
