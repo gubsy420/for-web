@@ -1,0 +1,154 @@
+name: Sync upstream release
+
+# Keeps this fork's customisations in sync with upstream stoatchat/for-web.
+# Each run merges the latest upstream *release* into our branch; clean merges
+# build and publish automatically, and conflicts are resolved by Claude Code
+# before the build proceeds. Nothing is published unless the merge is fully
+# resolved and committed.
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # daily 07:00 UTC; adjust as you like
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild even if the latest release is already merged"
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write # push the merge commit back to the fork
+  packages: write # push the image to GHCR
+  issues: write # open an issue if resolution can't complete
+  pull-requests: write
+
+env:
+  UPSTREAM_REPO: https://github.com/stoatchat/for-web.git
+  UPSTREAM_SLUG: stoatchat/for-web
+  IMAGE: ghcr.io/${{ github.repository_owner }}/for-web
+  CUSTOM_BRANCH: main # the fork branch that carries our customisations
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork (full history + submodules)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CUSTOM_BRANCH }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "for-web sync bot"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Detect latest release and attempt merge
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: bash .github/scripts/detect-merge.sh
+
+      # --- Conflict path: hand the in-progress merge to Claude -------------
+      - name: Resolve conflicts with Claude
+        if: steps.detect.outputs.action == 'conflict'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            A `git merge` of upstream release ${{ steps.detect.outputs.tag }} into
+            this fork's "${{ env.CUSTOM_BRANCH }}" branch is IN PROGRESS and has left
+            unresolved conflicts in the working tree.
+
+            Your job: resolve EVERY conflict so the tree builds and keeps our fork's
+            behaviour.
+
+            1. Read FORK_CUSTOMISATIONS.md at the repo root first — it is the source
+               of truth for what this fork intentionally changes and why.
+            2. For each conflicted file, integrate upstream's changes while preserving
+               our documented customisations. When upstream refactored code our patch
+               touched, re-apply the intent of our change to the new code rather than
+               blindly keeping either side.
+            3. Do not introduce unrelated changes.
+
+            When finished, run `git add -A` so every resolved file is staged, then stop.
+            Do NOT run `git commit`, `git merge --continue`, `git merge --abort`,
+            `git push`, `git checkout`, `git reset`, or `git stash` — the workflow
+            completes the merge itself. No conflict markers (<<<<<<<, =======, >>>>>>>)
+            may remain anywhere in the tree.
+          claude_args: |
+            --max-turns 80
+
+      - name: Verify resolution and complete the merge
+        if: steps.detect.outputs.action == 'conflict'
+        run: bash .github/scripts/verify-and-commit.sh
+
+      - name: Report unresolved merge
+        if: failure() && steps.detect.outputs.action == 'conflict'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git merge --abort 2>/dev/null || true
+          gh issue create \
+            --title "Auto-merge of ${{ steps.detect.outputs.tag }} needs manual attention" \
+            --body "Claude could not fully resolve the merge of upstream release \`${{ steps.detect.outputs.tag }}\` into \`${{ env.CUSTOM_BRANCH }}\`. The merge was aborted so the branch is clean. Resolve it locally, then push. Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --label "upstream-sync" 2>/dev/null \
+          || gh issue create \
+            --title "Auto-merge of ${{ steps.detect.outputs.tag }} needs manual attention" \
+            --body "Claude could not fully resolve the merge. Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      # --- Build path (clean merge or resolved conflict) ------------------
+      - name: Push merged branch
+        if: steps.detect.outputs.action != 'skip'
+        run: git push origin HEAD:${{ env.CUSTOM_BRANCH }}
+
+      - name: Sync submodules to merged pointers
+        if: steps.detect.outputs.action != 'skip'
+        run: git submodule update --init --recursive
+
+      - name: Set up QEMU
+        if: steps.detect.outputs.action != 'skip'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        if: steps.detect.outputs.action != 'skip'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.detect.outputs.action != 'skip'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        if: steps.detect.outputs.action != 'skip'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # unRAID is amd64; add linux/arm64 here if you ever need it (slower build).
+          platforms: linux/amd64
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.detect.outputs.version }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Upstream sync"
+            echo ""
+            echo "- Release: \`${{ steps.detect.outputs.tag }}\`"
+            echo "- Image version: \`${{ steps.detect.outputs.version }}\`"
+            echo "- Result: \`${{ steps.detect.outputs.action }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

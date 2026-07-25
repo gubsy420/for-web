@@ -1,0 +1,4 @@
+# These files run on Linux CI runners; keep LF regardless of the committer's OS.
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
