@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.14.0](https://github.com/stoatchat/for-web/compare/stoat-for-web-v0.13.1...stoat-for-web-v0.14.0) (2026-07-25)
+
+
+### Features
+
+* add emoji name and where it is from at the bottom of emoji picker ([#1289](https://github.com/stoatchat/for-web/issues/1289)) ([54b6631](https://github.com/stoatchat/for-web/commit/54b6631bc95d5e4025f7083aeb5079a5c46fec03))
+* edit bot username from bot management ui ([#1386](https://github.com/stoatchat/for-web/issues/1386)) ([99e7c6b](https://github.com/stoatchat/for-web/commit/99e7c6b7784ab5471d5c6b3cff569a3ab10cd6c2))
+
+
+### Bug Fixes
+
+* Fix bio reactivity in profile editing for users and bots ([#1387](https://github.com/stoatchat/for-web/issues/1387)) ([d078535](https://github.com/stoatchat/for-web/commit/d0785351e700882c0ea5c94e40b73ee6757d38f7))
+* Make copy file link and open file use preview url ([#1389](https://github.com/stoatchat/for-web/issues/1389)) ([57cbfe5](https://github.com/stoatchat/for-web/commit/57cbfe5e20711b4a45837f28dff4e2ce2baf4368))
+* PWA scope is set to "" in non-production builds ([#1376](https://github.com/stoatchat/for-web/issues/1376)) ([fc30735](https://github.com/stoatchat/for-web/commit/fc3073575dc66fe3303a910c15e8c4c1cd02eab1))
+* Update stoat.js and send MFA ticket to session delete ([#1388](https://github.com/stoatchat/for-web/issues/1388)) ([42a9292](https://github.com/stoatchat/for-web/commit/42a929290a4e000e1fca9dc3c4baf87bac79e729))
+
 ## [0.13.1](https://github.com/stoatchat/for-web/compare/stoat-for-web-v0.13.0...stoat-for-web-v0.13.1) (2026-07-23)
 
 
