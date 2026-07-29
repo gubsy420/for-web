@@ -201,7 +201,7 @@ export function UserContextMenu(props: {
    */
   function openAdminPanel() {
     window.open(
-      `https://old-admin.stoatinternal.com/panel/inspect/user/${props.user.id}`,
+      `https://admin.stoatinternal.com/panel/inspect/user/${props.user.id}`,
       "_blank",
     );
   }
@@ -303,7 +303,7 @@ export function UserContextMenu(props: {
       {/* Voice controls */}
       <Show when={props.inVoice && !props.user.self && !props.isScreenshare}>
         <ContextMenuButton
-          onMouseDown={(e) => e.stopImmediatePropagation()}
+          onpointerdown={(e) => e.stopImmediatePropagation()}
           onClick={(e) => e.stopImmediatePropagation()}
         >
           <Text class="label">
@@ -341,7 +341,7 @@ export function UserContextMenu(props: {
       </Show>
       <Show when={props.isScreenshare && !props.user.self}>
         <ContextMenuButton
-          onMouseDown={(e) => e.stopImmediatePropagation()}
+          onpointerdown={(e) => e.stopImmediatePropagation()}
           onClick={(e) => e.stopImmediatePropagation()}
         >
           <Text class="label">
@@ -387,7 +387,7 @@ export function UserContextMenu(props: {
           <Trans>Profile</Trans>
         </ContextMenuButton>
       </Show>
-      <Show when={props.user.relationship === "Friend"}>
+      <Show when={props.user.relationship === "Friend" || props.user.bot}>
         <ContextMenuButton icon={MdChat} onClick={openDm}>
           <Trans>Message</Trans>
         </ContextMenuButton>
