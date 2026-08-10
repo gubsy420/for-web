@@ -73,3 +73,52 @@ the *two-axis selection + explicit bitrate + 1440p60 ceiling*; re-express it on 
 of upstream's new structure rather than reverting to the single-preset model.
 
 <!-- Add further customisations below as they are introduced. -->
+
+---
+
+## Operating the sync pipeline
+
+Not a code customisation, but the sync workflow depends on it, and getting this
+wrong stops the pipeline silently.
+
+### `SYNC_PAT` is required
+
+`GITHUB_TOKEN` is **forbidden from creating or updating anything under
+`.github/workflows/`**, and no `permissions:` scope can grant it — the `workflows`
+scope does not exist for `GITHUB_TOKEN`. So the moment upstream adds or edits a
+workflow file, `git push` fails with:
+
+```
+! [remote rejected] HEAD -> main (refusing to allow a GitHub App to create or
+  update workflow `.github/workflows/<name>.yml` without `workflows` permission)
+```
+
+This is exactly what happened on **2026-08-01**, when upstream added
+`canary-release.yml`. Ten consecutive daily runs failed and the fork fell 36
+commits behind before it was noticed.
+
+**Fix:** create a PAT with the `workflow` scope (classic: `repo` + `workflow`;
+fine-grained: Contents *write* + Workflows *write* on this repo) and add it as the
+repository secret **`SYNC_PAT`**. The workflow falls back to `GITHUB_TOKEN` when
+the secret is absent and emits a warning, so it keeps working right up until
+upstream next touches a workflow file.
+
+### Inherited upstream workflows are auto-disabled
+
+A fork inherits upstream's workflows, and a merge can introduce new ones that are
+**active by default**. Upstream's `canary-release.yml` triggers on `push` to
+`main` — which is what every sync push does — and publishes to upstream's Harbor
+registry. After each push the pipeline disables every workflow except
+`sync-upstream.yml`, so new arrivals are neutralised automatically.
+
+There is a small race: a workflow added by a merge can fire on the sync push
+before that step disables it. If you see one unexpected run immediately after a
+sync, that is why; it will not recur.
+
+### Failures always open an issue
+
+Any failed run opens (or comments on) an issue labelled `upstream-sync`, one per
+upstream tag. Reporting deliberately lives in the **last** step of the job:
+`if: failure()` only fires for steps that have already run, so a reporter placed
+before the push cannot catch a push failure. Do not move it, and do not narrow
+its condition back to the conflict path.
