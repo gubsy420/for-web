@@ -23,8 +23,21 @@ concurrency:
 permissions:
   contents: write # push the merge commit back to the fork
   packages: write # push the image to GHCR
-  issues: write # open an issue if resolution can't complete
+  issues: write # open an issue if a run fails
   pull-requests: write
+  actions: write # disable upstream workflows that arrive via the merge
+
+# NOTE ON SYNC_PAT
+# GITHUB_TOKEN is forbidden from creating or updating files under
+# .github/workflows/ — and there is no `workflows` scope that `permissions:`
+# above can grant, because that scope does not exist for GITHUB_TOKEN. So the
+# moment upstream adds or edits any workflow file, `git push` is rejected with
+#   "refusing to allow a GitHub App to create or update workflow ... "
+# and the whole sync stalls. That is exactly what happened from 2026-08-01.
+#
+# SYNC_PAT is a PAT that carries the workflow scope, used only for checkout so
+# its credential is what `git push` uses. Without it this pipeline works right
+# up until upstream touches a workflow file, then silently stops forever.
 
 env:
   UPSTREAM_REPO: https://github.com/stoatchat/for-web.git
@@ -42,6 +55,18 @@ jobs:
           ref: ${{ env.CUSTOM_BRANCH }}
           fetch-depth: 0
           submodules: recursive
+          # Falls back to GITHUB_TOKEN so the pipeline still runs without the
+          # secret — it just cannot push workflow-file changes. See note above.
+          token: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Warn if SYNC_PAT is missing
+        env:
+          HAS_SYNC_PAT: ${{ secrets.SYNC_PAT != '' }}
+        run: |
+          if [ "$HAS_SYNC_PAT" != "true" ]; then
+            echo "::warning title=SYNC_PAT not set::Pushes will fail if this upstream release adds or edits any .github/workflows/* file. Add a PAT with the 'workflow' scope as the SYNC_PAT secret."
+          fi
 
       - name: Configure git identity
         run: |
@@ -89,24 +114,27 @@ jobs:
         if: steps.detect.outputs.action == 'conflict'
         run: bash .github/scripts/verify-and-commit.sh
 
-      - name: Report unresolved merge
+      - name: Abort an unresolved merge
         if: failure() && steps.detect.outputs.action == 'conflict'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git merge --abort 2>/dev/null || true
-          gh issue create \
-            --title "Auto-merge of ${{ steps.detect.outputs.tag }} needs manual attention" \
-            --body "Claude could not fully resolve the merge of upstream release \`${{ steps.detect.outputs.tag }}\` into \`${{ env.CUSTOM_BRANCH }}\`. The merge was aborted so the branch is clean. Resolve it locally, then push. Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --label "upstream-sync" 2>/dev/null \
-          || gh issue create \
-            --title "Auto-merge of ${{ steps.detect.outputs.tag }} needs manual attention" \
-            --body "Claude could not fully resolve the merge. Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: git merge --abort 2>/dev/null || true
 
       # --- Build path (clean merge or resolved conflict) ------------------
       - name: Push merged branch
         if: steps.detect.outputs.action != 'skip'
         run: git push origin HEAD:${{ env.CUSTOM_BRANCH }}
+
+      # Upstream workflows arrive enabled. canary-release.yml, added upstream in
+      # August 2026, triggers on `push: branches: [main]` and pushes to *their*
+      # Harbor registry — so every sync push would have fired it. Disable
+      # anything that is not this workflow, so new upstream workflows are
+      # neutralised as they appear rather than needing manual cleanup.
+      - name: Disable inherited upstream workflows
+        if: steps.detect.outputs.action != 'skip'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          KEEP: .github/workflows/sync-upstream.yml
+        run: bash .github/scripts/disable-inherited-workflows.sh
 
       - name: Sync submodules to merged pointers
         if: steps.detect.outputs.action != 'skip'
@@ -141,6 +169,22 @@ jobs:
             ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Reports ANY failure, not just conflicts, and MUST be the last step —
+      # `if: failure()` only fires for steps that already ran, so a reporter
+      # placed mid-job cannot catch a failure in a later step. The original
+      # workflow reported only on the conflict path, so when pushes began being
+      # rejected on 2026-08-01 there was no issue, no notification, and no
+      # visible signal: ten runs failed and the fork fell 36 commits behind.
+      # Keep this last, and keep the condition broad.
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.detect.outputs.tag }}
+          ACTION: ${{ steps.detect.outputs.action }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/report-failure.sh
 
       - name: Summary
         if: always()
