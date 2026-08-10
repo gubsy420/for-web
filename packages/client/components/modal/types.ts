@@ -77,6 +77,7 @@ export type Modals =
   | {
       type: "create_channel";
       server: Server;
+      categoryId?: string;
       cb?: (channel: Channel) => void;
     }
   | {
@@ -188,6 +189,7 @@ export type Modals =
       identifier: string;
       secret: string;
       callback: (code?: string) => void;
+      reject?: (reason?: string) => void;
     }
   | ({
       type: "mfa_flow";
