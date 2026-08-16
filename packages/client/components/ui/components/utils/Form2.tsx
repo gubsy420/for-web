@@ -10,7 +10,7 @@ import {
   splitProps,
 } from "solid-js";
 
-import { Trans, useLingui } from "@lingui-solid/solid/macro";
+import { Trans, useLingui } from "@lingui/solid/macro";
 import { VirtualContainer } from "@minht11/solid-virtual-container";
 import { css } from "styled-system/css";
 import { styled } from "styled-system/jsx";
@@ -22,6 +22,7 @@ import {
   Radio2,
   Text,
   TextField,
+  typography,
 } from "../design";
 import { TextEditor2 } from "../features/texteditor/TextEditor2";
 import { Row } from "../layout";
@@ -194,6 +195,11 @@ const FormFileInput = (
         required={local.control.isRequired}
         disabled={local.control.isDisabled}
       />
+      <Show when={local.maxSize}>
+        <span class={typography({ class: "label", size: "small" })}>
+          (max. {humanFileSize(local.maxSize!)})
+        </span>
+      </Show>
       <Show
         when={
           !local.hideErrors && local.control.isTouched && !local.control.isValid
@@ -497,7 +503,7 @@ function useSubmitHandler(
       control.markTouched(true);
     }
 
-    if (!canSubmit(group)) return;
+    if (!canSubmit(group)) return false;
 
     group.markPending(true);
 
@@ -505,12 +511,14 @@ function useSubmitHandler(
       await handler();
       resetGeneric(group, true);
       onReset?.();
+      return true;
     } catch (err) {
       group.setErrors({
         error: err,
       });
 
       resetGeneric(group, false);
+      return false;
     } finally {
       group.markPending(false);
     }
@@ -529,5 +537,9 @@ export const Form2 = {
   Reset: FormResetButton,
   Submit: FormSubmitButton,
   canSubmit,
+  reset: (group: IFormGroup, onReset?: () => void) => {
+    resetGeneric(group, true);
+    onReset?.();
+  },
   useSubmitHandler,
 };
