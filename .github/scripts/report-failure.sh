@@ -9,13 +9,19 @@
 #
 # Idempotent: one issue per upstream tag. Repeat failures add a comment rather
 # than opening a new issue every day.
-set -euo pipefail
+set -uo pipefail # NOT -e: reporting must never turn one failure into two
 
 TAG="${TAG:-unknown}"
 ACTION="${ACTION:-unknown}"
 RUN_URL="${RUN_URL:?RUN_URL is required}"
 LABEL="upstream-sync"
 TITLE="Upstream sync failed for ${TAG}"
+
+# Always emit an annotation first. Issue creation can fail for reasons entirely
+# outside this script (Issues disabled on the repo — the default for a fork, and
+# what silently defeated this reporter until 2026-08-16), so there must be a
+# signal that does not depend on it.
+echo "::error title=Upstream sync failed::${TAG} (merge result: ${ACTION}) — ${RUN_URL}"
 
 # The label may not exist yet; create it once, ignore if it already does.
 gh label create "$LABEL" --color B60205 --description "Automated upstream sync" 2>/dev/null || true
@@ -48,5 +54,8 @@ if [ -n "$existing" ]; then
 else
   echo "Opening a new issue for ${TAG}."
   gh issue create --title "$TITLE" --body "$BODY" --label "$LABEL" \
-    || gh issue create --title "$TITLE" --body "$BODY"
+    || gh issue create --title "$TITLE" --body "$BODY" \
+    || echo "::warning title=Could not open an issue::Are Issues enabled on this repository? The failure above is still real; see the error annotation."
 fi
+
+exit 0 # the run is already failing; never add a second failure on top

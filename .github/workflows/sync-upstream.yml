@@ -26,6 +26,14 @@ permissions:
   issues: write # open an issue if a run fails
   pull-requests: write
   actions: write # disable upstream workflows that arrive via the merge
+  id-token: write # REQUIRED by claude-code-action to fetch an OIDC token
+#
+# id-token: write was missing until 2026-08-16. It went unnoticed because the
+# Claude step only runs on the conflict path, so the first genuine conflict
+# (upstream v0.15.0, three days after the previous fix) was also the first time
+# the permission was ever exercised — the action failed all three retries with
+# "Could not fetch an OIDC token". Do not remove it just because clean merges
+# keep passing; clean merges never touch this code path.
 
 # NOTE ON SYNC_PAT
 # GITHUB_TOKEN is forbidden from creating or updating files under
