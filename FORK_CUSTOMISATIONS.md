@@ -115,6 +115,36 @@ There is a small race: a workflow added by a merge can fire on the sync push
 before that step disables it. If you see one unexpected run immediately after a
 sync, that is why; it will not recur.
 
+### gh must always be pointed at this fork
+
+This repository is a **fork**, and `gh` resolves a fork's default repo to its
+**parent**. Any `gh` call without an explicit target silently operates on
+`stoatchat/for-web`. On 2026-08-18 that made issue creation fail with
+"Resource not accessible by integration (createIssue)" and
+"could not add label: 'upstream-sync' not found" — both of which read like
+permission problems, while the token had `Issues: write` the entire time.
+
+`GH_REPO` is set at workflow level and every `gh` call in the scripts passes
+`-R "$REPO"`. Keep both; do not "tidy up" the apparent duplication.
+
+### Nothing is published without passing a gate
+
+- The merge must have **no conflict markers and no unmerged paths**
+  (`verify-and-commit.sh`).
+- On the conflict path only, the tree must **typecheck** (`typecheck.sh`).
+  `vite build` uses esbuild and only strips types, so the image build alone
+  cannot catch a resolution that compiles but is semantically wrong.
+- The branch is pushed **after** the image builds, so a merge that fails to
+  build is discarded rather than landing on `main` and poisoning later runs.
+
+### Conflict resolution gets two passes
+
+Claude has reported success while leaving hunks unresolved (2026-08-18: done
+after 24 of 80 turns, two hunks left in `rtc/state.tsx`). The first verify is
+`continue-on-error`; if anything remains, a second pass is handed the exact
+leftovers. Both prompts require Claude to run the marker and unmerged-path
+checks itself before declaring completion.
+
 ### Failures always open an issue
 
 Any failed run opens (or comments on) an issue labelled `upstream-sync`, one per
