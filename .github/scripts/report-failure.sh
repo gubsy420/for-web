@@ -14,17 +14,21 @@ set -uo pipefail # NOT -e: reporting must never turn one failure into two
 TAG="${TAG:-unknown}"
 ACTION="${ACTION:-unknown}"
 RUN_URL="${RUN_URL:?RUN_URL is required}"
+# Fall back to the runner-provided value so a missing env in the workflow
+# cannot silently retarget gh at this fork's PARENT repository.
+REPO="${REPO:-${GITHUB_REPOSITORY:?REPO or GITHUB_REPOSITORY is required}}"
 LABEL="upstream-sync"
 TITLE="Upstream sync failed for ${TAG}"
 
 # Always emit an annotation first. Issue creation can fail for reasons entirely
-# outside this script (Issues disabled on the repo — the default for a fork, and
-# what silently defeated this reporter until 2026-08-16), so there must be a
-# signal that does not depend on it.
+# outside this script — Issues disabled on the repo (the default for a fork,
+# which defeated this reporter until 2026-08-16), or gh resolving the default
+# repo to the fork's PARENT (which defeated it again on 2026-08-18). There must
+# be a signal that does not depend on any of that working.
 echo "::error title=Upstream sync failed::${TAG} (merge result: ${ACTION}) — ${RUN_URL}"
 
 # The label may not exist yet; create it once, ignore if it already does.
-gh label create "$LABEL" --color B60205 --description "Automated upstream sync" 2>/dev/null || true
+gh label create "$LABEL" -R "$REPO" --color B60205 --description "Automated upstream sync" 2>/dev/null || true
 
 BODY=$(cat <<EOF
 The automated upstream sync failed.
@@ -45,17 +49,17 @@ merge was aborted, so the branch is clean — resolve it locally and push.
 EOF
 )
 
-existing=$(gh issue list --state open --label "$LABEL" --search "$TITLE in:title" \
+existing=$(gh issue list -R "$REPO" --state open --label "$LABEL" --search "$TITLE in:title" \
              --json number,title --jq "map(select(.title == \"${TITLE}\")) | .[0].number // empty" 2>/dev/null || true)
 
 if [ -n "$existing" ]; then
   echo "Issue #${existing} already open for ${TAG}; adding a comment."
-  gh issue comment "$existing" --body "Failed again — ${RUN_URL}"
+  gh issue comment -R "$REPO" "$existing" --body "Failed again — ${RUN_URL}"
 else
   echo "Opening a new issue for ${TAG}."
-  gh issue create --title "$TITLE" --body "$BODY" --label "$LABEL" \
-    || gh issue create --title "$TITLE" --body "$BODY" \
-    || echo "::warning title=Could not open an issue::Are Issues enabled on this repository? The failure above is still real; see the error annotation."
+  gh issue create -R "$REPO" --title "$TITLE" --body "$BODY" --label "$LABEL" \
+    || gh issue create -R "$REPO" --title "$TITLE" --body "$BODY" \
+    || echo "::warning title=Could not open an issue::Check that Issues are enabled on ${REPO} and that gh targeted it (not the upstream parent). The failure above is still real; see the error annotation."
 fi
 
 exit 0 # the run is already failing; never add a second failure on top

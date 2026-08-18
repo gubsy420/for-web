@@ -4,7 +4,7 @@ name: Sync upstream release
 # Each run merges the latest upstream *release* into our branch; clean merges
 # build and publish automatically, and conflicts are resolved by Claude Code
 # before the build proceeds. Nothing is published unless the merge is fully
-# resolved and committed.
+# resolved, typechecks, and builds.
 
 on:
   schedule:
@@ -30,10 +30,10 @@ permissions:
 #
 # id-token: write was missing until 2026-08-16. It went unnoticed because the
 # Claude step only runs on the conflict path, so the first genuine conflict
-# (upstream v0.15.0, three days after the previous fix) was also the first time
-# the permission was ever exercised — the action failed all three retries with
-# "Could not fetch an OIDC token". Do not remove it just because clean merges
-# keep passing; clean merges never touch this code path.
+# (upstream v0.15.0) was also the first time the permission was ever exercised
+# — the action failed all three retries with "Could not fetch an OIDC token".
+# Do not remove it just because clean merges keep passing; clean merges never
+# touch this code path.
 
 # NOTE ON SYNC_PAT
 # GITHUB_TOKEN is forbidden from creating or updating files under
@@ -52,10 +52,18 @@ env:
   UPSTREAM_SLUG: stoatchat/for-web
   IMAGE: ghcr.io/${{ github.repository_owner }}/for-web
   CUSTOM_BRANCH: main # the fork branch that carries our customisations
+  # THIS REPO IS A FORK, and `gh` resolves the default repo for a fork to its
+  # PARENT. Without GH_REPO, `gh issue create` targeted stoatchat/for-web and
+  # died with "Resource not accessible by integration" — which reads like a
+  # permissions problem but was a targeting problem. Pin every gh call here.
+  GH_REPO: ${{ github.repository }}
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # A hung Claude turn or a wedged build must not sit in the concurrency
+    # group for six hours and block every following scheduled run.
+    timeout-minutes: 45
     steps:
       - name: Checkout fork (full history + submodules)
         uses: actions/checkout@v4
@@ -89,6 +97,10 @@ jobs:
         run: bash .github/scripts/detect-merge.sh
 
       # --- Conflict path: hand the in-progress merge to Claude -------------
+      # Two attempts. On 2026-08-18 Claude reported success after 24 of its 80
+      # allowed turns while two hunks in rtc/state.tsx were still unresolved —
+      # it believed it had finished. The gate caught it, but with a single
+      # attempt that wastes the entire run. Attempt 2 is told what is left.
       - name: Resolve conflicts with Claude
         if: steps.detect.outputs.action == 'conflict'
         uses: anthropics/claude-code-action@v1
@@ -99,22 +111,63 @@ jobs:
             this fork's "${{ env.CUSTOM_BRANCH }}" branch is IN PROGRESS and has left
             unresolved conflicts in the working tree.
 
-            Your job: resolve EVERY conflict so the tree builds and keeps our fork's
-            behaviour.
+            Your job: resolve EVERY conflict so the tree compiles and keeps our
+            fork's behaviour.
 
             1. Read FORK_CUSTOMISATIONS.md at the repo root first — it is the source
                of truth for what this fork intentionally changes and why.
-            2. For each conflicted file, integrate upstream's changes while preserving
+            2. Enumerate every conflicted file with
+               `git diff --name-only --diff-filter=U` and work through the whole
+               list. Do not stop early.
+            3. For each conflicted file, integrate upstream's changes while preserving
                our documented customisations. When upstream refactored code our patch
                touched, re-apply the intent of our change to the new code rather than
-               blindly keeping either side.
-            3. Do not introduce unrelated changes.
+               blindly keeping either side. If upstream renamed or replaced an API our
+               customisation calls, port the customisation onto the new API.
+            4. Do not introduce unrelated changes.
 
-            When finished, run `git add -A` so every resolved file is staged, then stop.
+            BEFORE YOU FINISH, verify your own work rather than assuming it is done.
+            Both of these MUST print nothing:
+              - git grep -nE "^(<{7}|={7}|>{7})([ \t]|$)" -- . ":(exclude).github/**"
+              - git ls-files -u
+            If either prints anything, you are not finished — keep going.
+
+            Then run `git add -A` so every resolved file is staged, and stop.
             Do NOT run `git commit`, `git merge --continue`, `git merge --abort`,
             `git push`, `git checkout`, `git reset`, or `git stash` — the workflow
-            completes the merge itself. No conflict markers (<<<<<<<, =======, >>>>>>>)
-            may remain anywhere in the tree.
+            completes the merge itself.
+          claude_args: |
+            --max-turns 80
+
+      # Soft gate: when this passes it also commits the merge, and the second
+      # pass is skipped. continue-on-error is what makes the retry possible.
+      - name: Verify resolution (first pass)
+        id: verify1
+        if: steps.detect.outputs.action == 'conflict'
+        continue-on-error: true
+        run: bash .github/scripts/verify-and-commit.sh
+
+      - name: Resolve remaining conflicts with Claude (second pass)
+        if: steps.detect.outputs.action == 'conflict' && steps.verify1.outcome == 'failure'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            A previous pass tried to resolve the in-progress merge of upstream release
+            ${{ steps.detect.outputs.tag }} but LEFT WORK UNFINISHED: conflict markers
+            or unmerged paths still remain in the tree.
+
+            Find exactly what is left and finish it:
+              - git grep -nE "^(<{7}|={7}|>{7})([ \t]|$)" -- . ":(exclude).github/**"
+              - git ls-files -u
+
+            Read FORK_CUSTOMISATIONS.md for what this fork intentionally changes, then
+            resolve every remaining hunk, preserving our customisations on top of
+            upstream's new code. Re-run BOTH commands above and confirm they print
+            nothing, run `git add -A`, and stop.
+
+            Do NOT run `git commit`, `git merge --continue`, `git merge --abort`,
+            `git push`, `git checkout`, `git reset`, or `git stash`.
           claude_args: |
             --max-turns 80
 
@@ -127,26 +180,23 @@ jobs:
         run: git merge --abort 2>/dev/null || true
 
       # --- Build path (clean merge or resolved conflict) ------------------
-      - name: Push merged branch
-        if: steps.detect.outputs.action != 'skip'
-        run: git push origin HEAD:${{ env.CUSTOM_BRANCH }}
-
-      # Upstream workflows arrive enabled. canary-release.yml, added upstream in
-      # August 2026, triggers on `push: branches: [main]` and pushes to *their*
-      # Harbor registry — so every sync push would have fired it. Disable
-      # anything that is not this workflow, so new upstream workflows are
-      # neutralised as they appear rather than needing manual cleanup.
-      - name: Disable inherited upstream workflows
-        if: steps.detect.outputs.action != 'skip'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          KEEP: .github/workflows/sync-upstream.yml
-        run: bash .github/scripts/disable-inherited-workflows.sh
-
       - name: Sync submodules to merged pointers
         if: steps.detect.outputs.action != 'skip'
         run: git submodule update --init --recursive
+
+      # `vite build` does not typecheck — esbuild only strips types — so the
+      # image build alone would happily publish a type-broken AI resolution.
+      # Conflict path only: a clean merge is upstream's own tested code and does
+      # not warrant the extra minutes on every scheduled run.
+      - name: Set up Node for typecheck
+        if: steps.detect.outputs.action == 'conflict'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Typecheck the resolved merge
+        if: steps.detect.outputs.action == 'conflict'
+        run: bash .github/scripts/typecheck.sh
 
       - name: Set up QEMU
         if: steps.detect.outputs.action != 'skip'
@@ -178,17 +228,39 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Reports ANY failure, not just conflicts, and MUST be the last step —
-      # `if: failure()` only fires for steps that already ran, so a reporter
-      # placed mid-job cannot catch a failure in a later step. The original
-      # workflow reported only on the conflict path, so when pushes began being
-      # rejected on 2026-08-01 there was no issue, no notification, and no
-      # visible signal: ten runs failed and the fork fell 36 commits behind.
-      # Keep this last, and keep the condition broad.
+      # Pushed AFTER the image builds, deliberately. Previously the branch went
+      # first, so a merge that failed to build still landed on main and every
+      # later run started from a broken base. If the build fails now, the merge
+      # is discarded with the runner and main stays good.
+      - name: Push merged branch
+        if: steps.detect.outputs.action != 'skip'
+        run: git push origin HEAD:${{ env.CUSTOM_BRANCH }}
+
+      # Upstream workflows arrive enabled. canary-release.yml, added upstream in
+      # August 2026, triggers on `push: branches: [main]` and pushes to *their*
+      # Harbor registry — so every sync push would have fired it. Disable
+      # anything that is not this workflow, so new upstream workflows are
+      # neutralised as they appear rather than needing manual cleanup.
+      - name: Disable inherited upstream workflows
+        if: steps.detect.outputs.action != 'skip'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          KEEP: .github/workflows/sync-upstream.yml
+        run: bash .github/scripts/disable-inherited-workflows.sh
+
+      # Reports ANY failure, not just conflicts, and MUST be the last acting
+      # step — `if: failure()` only fires for steps that already ran, so a
+      # reporter placed mid-job cannot catch a failure in a later step. The
+      # original workflow reported only on the conflict path, so when pushes
+      # began being rejected on 2026-08-01 there was no issue, no notification
+      # and no visible signal: ten runs failed and the fork fell 36 commits
+      # behind. Keep this last, and keep the condition broad.
       - name: Report failure
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           TAG: ${{ steps.detect.outputs.tag }}
           ACTION: ${{ steps.detect.outputs.action }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -203,4 +275,5 @@ jobs:
             echo "- Release: \`${{ steps.detect.outputs.tag }}\`"
             echo "- Image version: \`${{ steps.detect.outputs.version }}\`"
             echo "- Result: \`${{ steps.detect.outputs.action }}\`"
+            echo "- Needed a second resolution pass: \`${{ steps.verify1.outcome == 'failure' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
