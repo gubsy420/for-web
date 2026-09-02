@@ -103,7 +103,7 @@ jobs:
       # attempt that wastes the entire run. Attempt 2 is told what is left.
       - name: Resolve conflicts with Claude
         if: steps.detect.outputs.action == 'conflict'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@v1.0.213
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
@@ -138,6 +138,11 @@ jobs:
             completes the merge itself.
           claude_args: |
             --max-turns 80
+            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,Bash(git status:*),Bash(git diff:*),Bash(git grep:*),Bash(git ls-files:*),Bash(git log:*),Bash(git show:*),Bash(git add:*)"
+
+      - name: Check Claude tool denials (first pass)
+        if: steps.detect.outputs.action == 'conflict'
+        run: bash .github/scripts/check-claude-denials.sh
 
       # Soft gate: when this passes it also commits the merge, and the second
       # pass is skipped. continue-on-error is what makes the retry possible.
@@ -149,7 +154,7 @@ jobs:
 
       - name: Resolve remaining conflicts with Claude (second pass)
         if: steps.detect.outputs.action == 'conflict' && steps.verify1.outcome == 'failure'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@v1.0.213
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
@@ -170,6 +175,11 @@ jobs:
             `git push`, `git checkout`, `git reset`, or `git stash`.
           claude_args: |
             --max-turns 80
+            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,Bash(git status:*),Bash(git diff:*),Bash(git grep:*),Bash(git ls-files:*),Bash(git log:*),Bash(git show:*),Bash(git add:*)"
+
+      - name: Check Claude tool denials (second pass)
+        if: steps.detect.outputs.action == 'conflict' && steps.verify1.outcome == 'failure'
+        run: bash .github/scripts/check-claude-denials.sh
 
       - name: Verify resolution and complete the merge
         if: steps.detect.outputs.action == 'conflict'
