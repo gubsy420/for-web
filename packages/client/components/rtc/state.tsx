@@ -22,6 +22,8 @@ import {
   LocalTrackPublication,
   Room,
   Track,
+  VideoEncoding,
+  VideoPresets,
   VideoResolution,
 } from "livekit-client";
 import { Channel } from "stoat.js";
@@ -95,7 +97,9 @@ function screenShareBitrate(
  * Pick the content hint that suits the chosen framerate. Low framerates are
  * chosen to read text, high framerates to watch movement.
  */
-function screenShareContentHint(frameRate: number): string {
+function screenShareContentHint(
+  frameRate: number,
+): "text" | "detail" | "motion" {
   return frameRate <= 5 ? "text" : frameRate <= 15 ? "detail" : "motion";
 }
 
@@ -264,12 +268,20 @@ class Voice {
         deviceId: this.#settings.preferredAudioOutputDevice,
       },
       videoCaptureDefaults: {
-        resolution: {
-          width: 1280,
-          height: 720,
-          frameRate: 30,
-        },
+        // TODO: Support higher resolutions based on limits
+        resolution: VideoPresets.h720.resolution,
         deviceId: this.#settings.preferredVideoDevice,
+      },
+      publishDefaults: {
+        videoEncoding: VideoPresets.h720.encoding,
+        // Upstream uses ScreenSharePresets.h720fps30.encoding here. Same
+        // intent, expressed through this fork's bitrate table so the default
+        // matches what the two-axis picker publishes at 720p30, and so
+        // ScreenSharePresets stays unimported (see the note at the top).
+        screenShareEncoding: {
+          maxBitrate: screenShareBitrate("720", 30),
+          maxFramerate: 30,
+        },
       },
     });
 
@@ -679,46 +691,26 @@ class Voice {
             const frameRate = resolution.frameRate!;
 
             if (localTrack.videoTrack) {
-              await localTrack.videoTrack.mediaStreamTrack.applyConstraints({
-                frameRate: { max: frameRate },
-                // upstream #1497 added `ideal` so the stream starts at or
-                // below the target instead of starting high and scaling down.
-                // Kept, expressed against this fork's two-axis resolution.
-                // NB: upstream's own height branch reads `ideal:
-                // quality.resolution.width` — a copy-paste bug we do not carry.
-                width:
-                  resolution.width === 0
-                    ? undefined
-                    : { ideal: resolution.width, max: resolution.width },
-                height:
-                  resolution.height === 0
-                    ? undefined
-                    : { ideal: resolution.height, max: resolution.height },
-              });
-              localTrack.videoTrack.mediaStreamTrack.contentHint =
-                screenShareContentHint(frameRate);
-
-              // applyConstraints only retunes capture. The publish encoding
-              // lives on the sender, and without updating it a higher
-              // resolution stays starved of bitrate and looks soft.
-              const sender = localTrack.videoTrack.sender;
-              if (sender) {
-                const params = sender.getParameters();
-                if (params.encodings?.length) {
-                  const maxBitrate = screenShareBitrate(
-                    resolutionName,
+              // Upstream v0.15.3 introduced applyScreenShareConstraints,
+              // which applies capture constraints AND the publish encoding in
+              // one supported call. That replaces this fork's hand-rolled
+              // applyConstraints + sender.getParameters()/setParameters()
+              // workaround, which existed only because no such API was
+              // available. Intent preserved, expressed on upstream's new API.
+              await localTrack.videoTrack.applyScreenShareConstraints(
+                {
+                  resolution: {
                     frameRate,
-                  );
-
-                  for (const encoding of params.encodings) {
-                    encoding.maxBitrate = maxBitrate;
-                    encoding.maxFramerate = frameRate;
-                  }
-
-                  await sender.setParameters(params);
-                }
-              }
-
+                    width: resolution.width,
+                    height: resolution.height,
+                  },
+                  contentHint: screenShareContentHint(frameRate),
+                },
+                {
+                  maxBitrate: screenShareBitrate(resolutionName, frameRate),
+                  maxFramerate: frameRate,
+                },
+              );
               if (!audio && screenAudioTrack?.track) {
                 room.localParticipant.unpublishTrack(screenAudioTrack.track);
               }
