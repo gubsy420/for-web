@@ -17,13 +17,19 @@ import MdMinimize from "@material-symbols/svg-400/outlined/minimize.svg?componen
 import Wordmark from "../../../../public/assets/web/wordmark.svg?component-solid";
 import { pendingUpdate } from "../../../../src/serviceWorkerInterface";
 
+import { desktopConfig, usesCustomFrame } from "./desktopConfig";
+
 const isMacOS = navigator.platform.startsWith("Mac");
 const isNative = !!window.native;
 
 export function Titlebar() {
-  const [isMaximised, setIsMaximised] = createSignal(
-    isNative ? window.desktopConfig.get().windowState.isMaximised : false,
-  );
+  // read through `desktopConfig`, never `window.desktopConfig.get()` directly:
+  // the config arrives over IPC after first render, so an unguarded read threw
+  // here and took the whole app down with it
+  const [maximisedOverride, setMaximisedOverride] = createSignal<boolean>();
+  const isMaximised = () =>
+    maximisedOverride() ?? desktopConfig()?.windowState.isMaximised ?? false;
+
   const { lifecycle } = useClientLifecycle();
 
   function isDisconnected() {
@@ -37,17 +43,12 @@ export function Titlebar() {
 
   function maximise() {
     window.native.maximise();
-    setIsMaximised((t) => !t);
+    setMaximisedOverride(!isMaximised());
   }
 
   return (
     <Presence>
-      <Show
-        when={
-          (isNative && window.desktopConfig?.get().customFrame) ||
-          isDisconnected()
-        }
-      >
+      <Show when={usesCustomFrame() || isDisconnected()}>
         <Motion.div
           initial={{ height: 0 }}
           animate={{ height: "29px" }}

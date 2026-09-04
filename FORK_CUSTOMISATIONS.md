@@ -72,6 +72,55 @@ closed rather than getting streamers disconnected by voice-ingress.
 the *two-axis selection + explicit bitrate + 1440p60 ceiling*; re-express it on top
 of upstream's new structure rather than reverting to the single-preset model.
 
+---
+
+## 2. Desktop config is read defensively (fixes the desktop black screen)
+
+**Intent:** never read through `window.desktopConfig.get()` unguarded. It returns
+`undefined` for the first frames of a desktop cold start, and an unguarded read
+took the entire app down.
+
+**The bug:** the desktop client pushes its config to the renderer over IPC from
+its `did-finish-load` handler (`src/native/window.ts`), which fires *after* the
+page load event — ~210ms measured on a real instance. The app bundle served out
+of the service worker precache starts rendering well before that, so
+`Titlebar.tsx` read `window.desktopConfig.get().windowState.isMaximised` off
+`undefined`, threw during render, and left `#root` empty. The desktop client has
+no `did-fail-load` handler and draws no error state, so the result is a **black
+window that never recovers**.
+
+This is why the black screen looked superstitious for weeks. Clearing
+`%APPDATA%/stoat-desktop` "fixed" it only because uncached assets are slow enough
+to lose the race, and it returned as soon as the precache warmed up again.
+Confirmed 2026-09-03 by patching the fallback into the live minified bundle over
+CDP: the same profile went from `#root` empty with a
+`TypeError: Cannot read properties of undefined (reading 'windowState')` to the
+app fully mounted with zero exceptions.
+
+**Touched files:**
+- `packages/client/components/app/interface/desktop/desktopConfig.ts` (new) — a
+  reactive `desktopConfig()` accessor that polls until the IPC config lands
+  (the preload keeps it in a private variable and emits no event, so there is
+  nothing to subscribe to), plus `usesCustomFrame()`. `customFrame` **defaults to
+  `true`** while the config is in flight: the window is created with
+  `frame: !customFrame`, so guessing `false` yields a window with neither
+  titlebar nor OS frame — unmovable and unclosable.
+- `packages/client/components/app/interface/desktop/Titlebar.tsx` — reads through
+  the accessor; `isMaximised` became a derived signal with a local override so it
+  still tracks the real config once it arrives.
+
+**Still unguarded:** `settings/user/Native.tsx:62` does the same bare
+`window.desktopConfig.get()`. It is only reachable from settings, long after the
+config has landed, so it was left alone to keep the merge surface small — but if
+upstream ever renders it earlier, give it the same treatment.
+
+**Conflict guidance:** if upstream restructures the titlebar, keep the *guarded,
+reactive* read and the `customFrame: true` default. Reverting to a direct
+`window.desktopConfig.get()` reintroduces the black screen. The proper upstream
+fix belongs in `for-desktop` (deliver the config synchronously from the preload
+rather than on `did-finish-load`); if that ever lands, this guard is still
+correct and should stay as defence in depth.
+
 <!-- Add further customisations below as they are introduced. -->
 
 ---
